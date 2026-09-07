@@ -15,6 +15,7 @@
 //     FIREBASE_API_KEY  (web API key ของ geisha-coupon — ตัวเดียวกับใน app.js)
 //     ADMIN_KEY    รหัสอะไรก็ได้ ไว้กด /run ทดสอบ
 //     OWNER_ID     (ไม่บังคับ) userId เจ้าของ — รับแจ้งเมื่อโพสต์ไม่ได้ (ทัก OA แล้วพิมพ์ "id" จะได้มา)
+//     FORWARD_WEBHOOK (ไม่บังคับ) URL webhook เดิมของ OA (Apps Script …/exec) — Worker ส่งต่อทุก event ให้ ของเก่าทำงานต่อได้
 // ═══════════════════════════════════════════════════════════════════
 
 const PROJECT = 'geisha-coupon';
@@ -27,10 +28,10 @@ const DOW_TH = ['อาทิตย์', 'จันทร์', 'อังคา�
 export default {
   async scheduled(event, env, ctx) { ctx.waitUntil(postAll(env, 'cron', 'all')); },
 
-  async fetch(req, env) {
+  async fetch(req, env, ctx) {
     const url = new URL(req.url);
     const p = url.pathname;
-    if (req.method === 'POST' && (p === '/webhook' || p.startsWith('/webhook/'))) return handleWebhook(req, env);
+    if (req.method === 'POST' && (p === '/webhook' || p.startsWith('/webhook/'))) return handleWebhook(req, env, ctx);
     if (p === '/run') {
       if (url.searchParams.get('key') !== env.ADMIN_KEY) return new Response('forbidden', { status: 403 });
       const r = await postAll(env, 'manual', url.searchParams.get('shop') || 'all');
@@ -115,12 +116,18 @@ function shopOfSource(env, src, txt) {
   if (src && src.groupId) { for (const k of Object.keys(SHOPS)) if (env['GROUP_' + k.toUpperCase()] === src.groupId) return k; }
   return 'gs';
 }
-async function handleWebhook(req, env) {
+async function handleWebhook(req, env, ctx) {
   const token = env.LINE_TOKEN, secret = env.LINE_SECRET;
   const raw = await req.text();
+  const sig = req.headers.get('x-line-signature') || '';
   if (secret) {
-    const sig = req.headers.get('x-line-signature') || '';
     if (!(await verifySig(secret, raw, sig))) return new Response('bad signature', { status: 401 });
+  }
+  // 🔁 ส่งต่อให้ webhook เดิม (Apps Script) ทุก event — ระบบเก่าไม่กระทบ (ทำเบื้องหลัง ไม่หน่วง LINE)
+  if (env.FORWARD_WEBHOOK && raw && raw.length > 2) {
+    const fwd = fetch(env.FORWARD_WEBHOOK, { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Line-Signature': sig }, body: raw, redirect: 'follow' })
+      .then(r => console.log('forward →', r.status)).catch(e => console.error('forward failed', e));
+    if (ctx && ctx.waitUntil) ctx.waitUntil(fwd);
   }
   let body; try { body = JSON.parse(raw); } catch { return new Response('bad json', { status: 400 }); }
   for (const ev of (body.events || [])) {
