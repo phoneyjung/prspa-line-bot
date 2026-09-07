@@ -1,0 +1,11 @@
+name = "prspa-line-bot"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+# โพสต์เข้ากลุ่ม LINE ทุก 2 ชม. เวลาไทย 09,11,13,15,17,19,21 น. (Cloudflare ใช้ UTC = ไทย -7 ชม.)
+[triggers]
+crons = ["0 2,4,6,8,10,12,14 * * *"]
+
+# ค่าลับตั้งใน Dashboard → Settings → Variables and Secrets (ห้ามใส่ในไฟล์นี้):
+#   LINE_TOKEN  LINE_SECRET  GROUP_GS  GROUP_YS  OWNER_ID
+#   FIREBASE_API_KEY  ADMIN_KEY
